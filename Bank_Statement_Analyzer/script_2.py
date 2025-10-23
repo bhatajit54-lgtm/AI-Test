@@ -1,0 +1,389 @@
+
+# Create Page 3: Processing (processing.html)
+processing_html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing - Bank Statement Analyzer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .spinner {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #667eea;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            animation: spin 1s linear infinite;
+            margin: 30px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .status {
+            color: #666;
+            font-size: 18px;
+            margin: 20px 0;
+            min-height: 50px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #f0f0f0;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 30px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.5s;
+        }
+        .error {
+            color: #ef4444;
+            padding: 20px;
+            background: #fee;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        .btn-back {
+            margin-top: 20px;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: none;
+        }
+        .btn-back:hover { background: #764ba2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Processing Your Statement</h1>
+        <div class="spinner" id="spinner"></div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress"></div>
+        </div>
+        <div class="status" id="status">Initializing...</div>
+        <div class="error" id="error"></div>
+        <button class="btn-back" id="btn-back" onclick="goBack()">Go Back</button>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let currentStep = 0;
+        const steps = [
+            'Reading PDF file...',
+            'Extracting text content...',
+            'Parsing transactions...',
+            'Analyzing spending patterns...',
+            'Categorizing transactions...',
+            'Calculating summaries...',
+            'Finalizing data...'
+        ];
+
+        function updateStatus(message, progress) {
+            document.getElementById('status').textContent = message;
+            document.getElementById('progress').style.width = progress + '%';
+        }
+
+        function showError(message) {
+            document.getElementById('spinner').style.display = 'none';
+            document.getElementById('error').textContent = message;
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('btn-back').style.display = 'inline-block';
+        }
+
+        function goBack() {
+            window.location.href = 'upload.html';
+        }
+
+        async function processPDF() {
+            try {
+                const pdfData = localStorage.getItem('bank_pdffile');
+                if (!pdfData) {
+                    showError('No PDF file found. Please upload a file.');
+                    return;
+                }
+
+                updateStatus(steps[0], 10);
+
+                // Load PDF
+                const loadingTask = pdfjsLib.getDocument(pdfData);
+                const pdf = await loadingTask.promise;
+                
+                updateStatus(steps[1], 25);
+
+                // Extract text from all pages
+                let fullText = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + '\\n';
+                }
+
+                updateStatus(steps[2], 40);
+
+                // Parse Axis Bank statement
+                const result = parseAxisBankStatement(fullText);
+                
+                updateStatus(steps[3], 60);
+
+                // Categorize transactions
+                result.transactions.forEach(txn => {
+                    txn.category = categorizeTransaction(txn.description);
+                });
+
+                updateStatus(steps[4], 75);
+
+                // Calculate summaries
+                const summary = calculateSummary(result.transactions, result.openingBalance);
+                
+                updateStatus(steps[5], 90);
+
+                // Store in localStorage
+                localStorage.setItem('bank_transactions', JSON.stringify(result.transactions));
+                localStorage.setItem('bank_accountinfo', JSON.stringify(result.accountInfo));
+                localStorage.setItem('bank_summary', JSON.stringify(summary));
+
+                updateStatus(steps[6], 100);
+
+                // Redirect to analysis page
+                setTimeout(() => {
+                    window.location.href = 'analyze.html';
+                }, 1000);
+
+            } catch (error) {
+                console.error('Processing error:', error);
+                showError('Error processing PDF: ' + error.message + '. Please ensure it is a valid Axis Bank statement.');
+            }
+        }
+
+        function parseAxisBankStatement(text) {
+            const lines = text.split('\\n');
+            const transactions = [];
+            let accountInfo = {};
+            let openingBalance = 0;
+            let inTransactionSection = false;
+
+            // Extract account information
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Account holder name (first line)
+                if (!accountInfo.name && line && !line.includes('Axis') && !line.includes('Bank')) {
+                    const nameMatch = line.match(/^([A-Z\\s]+)$/);
+                    if (nameMatch) {
+                        accountInfo.name = nameMatch[1].trim();
+                    }
+                }
+                
+                // Account number
+                if (line.includes('Account No') || line.includes('Statement of Account')) {
+                    const accMatch = line.match(/(\\d{15,})/);
+                    if (accMatch) {
+                        accountInfo.accountNumber = accMatch[1];
+                    }
+                }
+                
+                // IFSC Code
+                if (line.includes('IFSC')) {
+                    const ifscMatch = line.match(/([A-Z]{4}\\d{7})/);
+                    if (ifscMatch) {
+                        accountInfo.ifsc = ifscMatch[1];
+                    }
+                }
+                
+                // Statement period
+                if (line.includes('From :') && line.includes('To :')) {
+                    const periodMatch = line.match(/From\\s*:\\s*([\\d-]+)\\s+To\\s*:\\s*([\\d-]+)/);
+                    if (periodMatch) {
+                        accountInfo.period = periodMatch[1] + ' to ' + periodMatch[2];
+                    }
+                }
+                
+                // Opening balance
+                if (line.includes('OPENING BALANCE')) {
+                    const balMatch = lines[i+1] ? lines[i+1].match(/([\\d,.]+)/) : null;
+                    if (balMatch) {
+                        openingBalance = parseFloat(balMatch[1].replace(/,/g, ''));
+                    }
+                    inTransactionSection = true;
+                    continue;
+                }
+                
+                // Parse transactions
+                if (inTransactionSection && line) {
+                    // Transaction line pattern: DD-MM-YYYY ... Description ... Amount ... Balance
+                    const dateMatch = line.match(/^(\\d{2}-\\d{2}-\\d{4})/);
+                    if (dateMatch) {
+                        const date = dateMatch[1];
+                        
+                        // Extract parts
+                        const parts = line.split(/\\s{2,}/); // Split by multiple spaces
+                        if (parts.length >= 3) {
+                            let description = '';
+                            let debit = 0;
+                            let credit = 0;
+                            let balance = 0;
+                            
+                            // Find amounts (numbers with decimals)
+                            const amounts = line.match(/\\b\\d+\\.\\d{2}\\b/g) || [];
+                            
+                            if (amounts.length >= 2) {
+                                // Last amount is usually balance
+                                balance = parseFloat(amounts[amounts.length - 1]);
+                                
+                                // Extract description (text between date and amounts)
+                                const descMatch = line.match(/\\d{2}-\\d{2}-\\d{4}\\s+\\d*\\s+(.+?)\\s+[\\d,.]+/);
+                                description = descMatch ? descMatch[1].trim() : parts[2] || '';
+                                
+                                // Determine debit/credit
+                                if (amounts.length >= 3) {
+                                    debit = parseFloat(amounts[amounts.length - 3]);
+                                    credit = parseFloat(amounts[amounts.length - 2]);
+                                } else {
+                                    // Only one amount besides balance
+                                    const amt = parseFloat(amounts[0]);
+                                    // Compare with previous balance to determine type
+                                    if (transactions.length > 0) {
+                                        const prevBal = transactions[transactions.length - 1].balance;
+                                        if (balance > prevBal) {
+                                            credit = amt;
+                                        } else {
+                                            debit = amt;
+                                        }
+                                    }
+                                }
+                                
+                                const type = credit > 0 ? 'Credit' : 'Debit';
+                                const amount = credit > 0 ? credit : debit;
+                                
+                                if (amount > 0) {
+                                    transactions.push({
+                                        date: date,
+                                        description: description,
+                                        type: type,
+                                        amount: amount,
+                                        balance: balance,
+                                        category: ''
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return {
+                accountInfo: accountInfo,
+                transactions: transactions,
+                openingBalance: openingBalance
+            };
+        }
+
+        function categorizeTransaction(description) {
+            const desc = description.toUpperCase();
+            
+            if (desc.includes('SWIGGY') || desc.includes('ZOMATO') || desc.includes('HUNGERBOX') || 
+                desc.includes('RESTAURANT') || desc.includes('HOTEL') || desc.includes('CAFE') || desc.includes('COFFEE')) {
+                return 'Food & Dining';
+            }
+            if (desc.includes('FLIPKART') || desc.includes('AMAZON') || desc.includes('MEESHO') || 
+                desc.includes('SUPERMART') || desc.includes('SHOPPING')) {
+                return 'Shopping';
+            }
+            if (desc.includes('UBER') || desc.includes('BUS') || desc.includes('TRAVEL') || 
+                desc.includes('IRCTC') || desc.includes('TICKET')) {
+                return 'Transportation';
+            }
+            if (desc.includes('HOSPITAL') || desc.includes('PHARMACY') || desc.includes('MEDICAL') || 
+                desc.includes('DOCTOR') || desc.includes('CLINIC')) {
+                return 'Healthcare';
+            }
+            if (desc.includes('WIPRO') || desc.includes('SALARY') || desc.includes('ACH-CR')) {
+                return 'Salary/Income';
+            }
+            if (desc.includes('PPF') || desc.includes('IPPF') || desc.includes('MONEYLICIOUS') || 
+                desc.includes('INVESTMENT')) {
+                return 'Investments';
+            }
+            if (desc.includes('UPI/P2M') || desc.includes('UPI/P2A')) {
+                return 'UPI Payments';
+            }
+            if (desc.includes('NEFT') || desc.includes('IMPS') || desc.includes('RTGS')) {
+                return 'Bank Transfers';
+            }
+            return 'Others';
+        }
+
+        function calculateSummary(transactions, openingBalance) {
+            let totalCredits = 0;
+            let totalDebits = 0;
+            
+            transactions.forEach(txn => {
+                if (txn.type === 'Credit') {
+                    totalCredits += txn.amount;
+                } else {
+                    totalDebits += txn.amount;
+                }
+            });
+            
+            const closingBalance = transactions.length > 0 ? 
+                transactions[transactions.length - 1].balance : openingBalance;
+            
+            return {
+                openingBalance: openingBalance,
+                closingBalance: closingBalance,
+                totalCredits: totalCredits,
+                totalDebits: totalDebits,
+                netChange: closingBalance - openingBalance,
+                transactionCount: transactions.length
+            };
+        }
+
+        // Start processing when page loads
+        window.onload = function() {
+            processPDF();
+        };
+    </script>
+</body>
+</html>"""
+
+with open('processing.html', 'w', encoding='utf-8') as f:
+    f.write(processing_html)
+
+print("Created: processing.html (Processing page)")
+print("File size:", len(processing_html), "bytes")
